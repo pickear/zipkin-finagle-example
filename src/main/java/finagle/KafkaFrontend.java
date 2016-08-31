@@ -8,6 +8,7 @@ import com.twitter.finagle.http.Request;
 import com.twitter.finagle.http.Response;
 import com.twitter.finagle.zipkin.core.SamplingTracer;
 import com.twitter.util.Future;
+import finagle.filter.TracingFilter;
 import zipkin.finagle.kafka.KafkaZipkinTracer;
 
 import java.net.InetAddress;
@@ -44,20 +45,26 @@ public class KafkaFrontend extends Service<Request, Response> {
     // Always set the tracer explicitly. The default constructor reads from system properties.
       SamplingTracer tracer = new KafkaZipkinTracer();
 
-    Service<Request, Response> backendClient =
-        ClientBuilder.safeBuild(ClientBuilder.get()
-            .tracer(tracer)
-            .codec(Http.get().enableTracing(true))
-            .hosts("localhost:9000")
-            .hostConnectionLimit(1)
-            .name("frontend")); // this assigns the local service name
 
-    ServerBuilder.safeBuild(
-        new KafkaFrontend(backendClient),
-        ServerBuilder.get()
-            .tracer(tracer)
-            .codec(Http.get().enableTracing(true))
-            .bindTo(new InetSocketAddress(InetAddress.getLoopbackAddress(), 8082))
-            .name("frontend")); // this assigns the local service name
+
+    Service<Request, Response> backendClient = ClientBuilder.safeBuild(ClientBuilder.get()
+                                                                                    .tracer(tracer)
+                                                                                    .codec(Http.get().enableTracing(true))
+                                                                                    .hosts("localhost:9000")
+                                                                                    .hostConnectionLimit(1)
+                                                                                    .name("frontend")
+                                                                       ); // this assigns the local service name
+
+      TracingFilter filter = new TracingFilter(tracer);
+      Service service = new KafkaFrontend(backendClient);
+      service = filter.andThen(service);
+
+      ServerBuilder.safeBuild(service,
+            ServerBuilder.get()
+                .tracer(tracer)
+                .codec(Http.get().enableTracing(true))
+                .bindTo(new InetSocketAddress(InetAddress.getLoopbackAddress(), 8082))
+                .name("frontend")
+      ); // this assigns the local service name
   }
 }

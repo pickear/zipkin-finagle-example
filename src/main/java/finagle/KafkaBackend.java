@@ -7,13 +7,14 @@ import com.twitter.finagle.http.Request;
 import com.twitter.finagle.http.Response;
 import com.twitter.finagle.zipkin.core.SamplingTracer;
 import com.twitter.util.Future;
+import finagle.filter.TracingFilter;
 import zipkin.finagle.kafka.KafkaZipkinTracer;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Date;
 
-public class kafkaBackend extends Service<Request, Response> {
+public class KafkaBackend extends Service<Request, Response> {
 
   @Override
   public Future<Response> apply(Request request) {
@@ -36,12 +37,15 @@ public class kafkaBackend extends Service<Request, Response> {
       
       SamplingTracer tracer = new KafkaZipkinTracer();
 
-    ServerBuilder.safeBuild(
-        new kafkaBackend(),
-        ServerBuilder.get()
-            .tracer(tracer)
-            .codec(Http.get().enableTracing(true))
-            .bindTo(new InetSocketAddress(InetAddress.getLoopbackAddress(), 9000))
-            .name("backend")); // this assigns the local service name
+      TracingFilter filter = new TracingFilter(tracer);
+      Service service = new KafkaBackend();
+      service = filter.andThen(service);
+
+      ServerBuilder.safeBuild(service,ServerBuilder.get()
+                                                 .tracer(tracer)
+                                                 .codec(Http.get().enableTracing(true))
+                                                 .bindTo(new InetSocketAddress(InetAddress.getLoopbackAddress(), 9000))
+                                                 .name("backend")
+                              ); // this assigns the local service name
   }
 }
